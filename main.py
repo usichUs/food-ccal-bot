@@ -5,7 +5,7 @@ from aiogram.types import Message
 import requests
 import time
 
-from settings import TOKEN
+from setting.settings import TOKEN
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
