@@ -1,4 +1,13 @@
 .vscode/
-venv/
 setting/
 API/
+__pycache__/
+*.pyc
+*.pyo
+*.so
+*.a
+*.swp
+*.tar
+*.zip
+*.gz
+venv/
