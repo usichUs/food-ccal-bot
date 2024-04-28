@@ -1,0 +1,26 @@
+[
+    {
+        "id": 1,
+        "name": "Омлет",
+        "ingredients": ["яйца", "молоко", "соль", "перец", "зелень"],
+        "receipt_link": "https://example.com/omlet_receipt",
+        "type": "Breakfast",
+        "calories": 250
+    },
+    {
+        "id": 2,
+        "name": "Салат Цезарь",
+        "ingredients": ["куриное филе", "салат Айсберг", "помидоры", "сухарики", "пармезан", "соус Цезарь"],
+        "receipt_link": "https://example.com/caesar_salad_receipt",
+        "type": "Lunch",
+        "calories": 400
+    },
+    {
+        "id": 3,
+        "name": "Паста с томатным соусом",
+        "ingredients": ["паста", "томаты", "оливковое масло", "лук", "чеснок", "базилик"],
+        "receipt_link": "https://example.com/pasta_receipt",
+        "type": "Dinner",
+        "calories": 350
+    }
+]
