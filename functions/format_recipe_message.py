@@ -8,9 +8,9 @@ def get_time_by_type(recipe_type):
 
 def format_recipe_message(recipe):
     message = (
-        f"{get_time_by_type(recipe['type'])}\n"
-        f"{recipe['name']} - {', '.join(recipe['ingredients'])}\n"
-        f"Рецепт: {recipe['receipt_link']}\n"
-        f"Калории: {recipe['calories']}\n"
+        f"<b>{get_time_by_type(recipe['type'])}</b>\n"
+        f"<b>{recipe['name']}</b> <i>- {', '.join(recipe['ingredients'])}</i>\n"
+        f"<b>Рецепт:</b> <i>{recipe['receipt_link']}</i>\n"
+        f"<b>Калории:</b> <i>{recipe['calories']}</i>\n"
     )
     return message
