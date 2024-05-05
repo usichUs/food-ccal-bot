@@ -6,8 +6,8 @@ from scipy.integrate import odeint #pip install scipy
 # Определяем функцию правых частей системы
 def system(y, t):
     x, y = y
-    dxdt = 3*x - 2*y #Менять тут (x с точкой)
-    dydt = 4*y - 6*x #Менять тут (y с точкой)
+    dxdt = x - 2*y #Менять тут (x с точкой)
+    dydt = 7*x - 8*y #Менять тут (y с точкой)
     return [dxdt, dydt]
 
 # Генерируем сетку для x и y
