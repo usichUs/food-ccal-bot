@@ -1,35 +1,23 @@
 import random
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from setting.settings import TOKEN
+from data.text_data import recipes, healthy_foods, nutrition_tips, activity_tips, bmi_advice
 
 # Инициализация бота и диспетчера
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
-
-# Примерный список рецептов
-recipes = [
-    "Салат Цезарь: курица, салат, сыр, соус Цезарь",
-    "Борщ: свекла, капуста, картофель, морковь, лук",
-    "Паста Болоньезе: макароны, фарш, томаты, лук, чеснок",
-    # Добавьте другие рецепты по вашему желанию
-]
-
-# Функция для расчета суточной потребности в калориях
-def calculate_calories(weight, height, age, gender):
-    if gender == 'male':
-        return 88.36 + (13.4 * weight) + (4.8 * height) - (5.7 * age)
-    else:
-        return 447.6 + (9.2 * weight) + (3.1 * height) - (4.3 * age)
 
 # Обработчик команды /start
 @dp.message(Command('start'))
 async def send_welcome(message: types.Message):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Получить рецепт", callback_data="get_recipe")],
-        [InlineKeyboardButton(text="Рассчитать калории", callback_data="calculate_calories")]
+        [InlineKeyboardButton(text="Полезные продукты", callback_data="get_healthy_food")],
+        [InlineKeyboardButton(text="Рекомендации по питанию", callback_data="get_nutrition_tips")],
+        [InlineKeyboardButton(text="Рассчитать ИМТ", callback_data="calculate_bmi")],
+        [InlineKeyboardButton(text="Рекомендации по активности", callback_data="get_activity_tips")]
     ])
     await message.answer("Привет! Я бот для помощи с питанием. Выберите действие:", reply_markup=keyboard)
 
@@ -40,49 +28,30 @@ async def send_random_recipe(callback: types.CallbackQuery):
     await callback.message.answer(f"Ваш случайный рецепт: {recipe}")
     await callback.answer()
 
-@dp.callback_query(F.data == "calculate_calories")
-async def request_calories_info(callback: types.CallbackQuery):
-    await callback.message.answer("Введите данные в формате: вес(кг) рост(см) возраст пол(м/ж)")
+@dp.callback_query(F.data == "get_healthy_food")
+async def send_healthy_food(callback: types.CallbackQuery):
+    food = random.choice(healthy_foods)
+    await callback.message.answer(f"Полезный продукт: {food}")
     await callback.answer()
 
-# Обработчик текстовых сообщений для расчета калорий
-@dp.message(F.text.regexp(r'^\d+(\.\d+)? \d+(\.\d+)? \d+ [мжМЖ]$'))
-async def handle_message(message: types.Message):
-    try:
-        data = message.text.split()
-        weight = float(data[0])
-        height = float(data[1])
-        age = int(data[2])
-        gender = data[3].lower()
-        
-        if gender not in ('м', 'ж'):
-            await message.reply("Пол должен быть 'м' или 'ж'")
-            return
-        
-        gender = 'male' if gender == 'м' else 'female'
-        calories = calculate_calories(weight, height, age, gender)
-        await message.reply(f"Ваша суточная потребность в калориях: {calories:.2f} калорий.")
-    except (ValueError, IndexError):
-        await message.reply("Неверный формат данных. Пожалуйста, введите в формате: вес(кг) рост(см) возраст пол(м/ж)")
+@dp.callback_query(F.data == "get_nutrition_tips")
+async def send_nutrition_tips(callback: types.CallbackQuery):
+    tip = random.choice(nutrition_tips)
+    await callback.message.answer(f"Рекомендация по питанию: {tip}")
+    await callback.answer()
 
-# Дополнительная функция: советы по питанию
-@dp.message(Command('advice'))
-async def send_advice(message: types.Message):
-    advices = [
-        "Пейте больше воды.",
-        "Ешьте больше овощей и фруктов.",
-        "Избегайте переработанных продуктов.",
-        "Сократите потребление сахара.",
-        "Употребляйте белок в каждом приеме пищи."
-    ]
-    advice = random.choice(advices)
-    await message.answer(f"Совет по питанию: {advice}")
+@dp.callback_query(F.data == "calculate_bmi")
+async def request_bmi_info(callback: types.CallbackQuery):
+    await callback.message.answer("Введите ваши данные в формате: вес(кг) рост(см)")
+    await callback.answer()
 
-# Дополнительная функция: проверка ИМТ
-@dp.message(Command('bmi'))
-async def request_bmi_info(message: types.Message):
-    await message.answer("Введите ваши данные в формате: вес(кг) рост(см)")
+@dp.callback_query(F.data == "get_activity_tips")
+async def send_activity_tips(callback: types.CallbackQuery):
+    tip = random.choice(activity_tips)
+    await callback.message.answer(f"Рекомендация по физической активности: {tip}")
+    await callback.answer()
 
+# Обработчик текстовых сообщений для расчета ИМТ и выдачи советов
 @dp.message(F.text.regexp(r'^\d+(\.\d+)? \d+$'))
 async def calculate_bmi(message: types.Message):
     try:
@@ -90,10 +59,50 @@ async def calculate_bmi(message: types.Message):
         weight = float(data[0])
         height = float(data[1]) / 100  # Переводим рост в метры
         bmi = weight / (height ** 2)
-        await message.reply(f"Ваш ИМТ: {bmi:.2f}")
+        
+        if bmi < 18.5:
+            advice = bmi_advice['underweight']
+        elif 18.5 <= bmi < 25:
+            advice = bmi_advice['normal']
+        elif 25 <= bmi < 30:
+            advice = bmi_advice['overweight']
+        else:
+            advice = bmi_advice['obesity']
+
+        await message.reply(f"Ваш ИМТ: {bmi:.2f}\n{advice}")
     except (ValueError, IndexError):
         await message.reply("Неверный формат данных. Пожалуйста, введите в формате: вес(кг) рост(см)")
 
+# Дополнительная функция: советы по питанию
+@dp.message(Command('advice'))
+async def send_advice(message: types.Message):
+    advice = random.choice(nutrition_tips)
+    await message.answer(f"Совет по питанию: {advice}")
+
+# Дополнительная функция: информация о полезных продуктах
+@dp.message(Command('healthy_food'))
+async def send_healthy_food_info(message: types.Message):
+    food = random.choice(healthy_foods)
+    await message.answer(f"Полезный продукт: {food}")
+
+# Дополнительная функция: рекомендации по физической активности
+@dp.message(Command('activity'))
+async def send_activity(message: types.Message):
+    activity = random.choice(activity_tips)
+    await message.answer(f"Рекомендация по физической активности: {activity}")
+
+# Установка команд бота
+async def set_commands(bot: Bot):
+    commands = [
+        BotCommand(command="/start", description="Запустить бота"),
+        BotCommand(command="/advice", description="Получить совет по питанию"),
+        BotCommand(command="/bmi", description="Рассчитать ИМТ"),
+        BotCommand(command="/healthy_food", description="Информация о полезных продуктах"),
+        BotCommand(command="/activity", description="Рекомендации по физической активности")
+    ]
+    await bot.set_my_commands(commands)
+
 # Запуск бота
 if __name__ == '__main__':
+    dp.startup.register(set_commands)
     dp.run_polling(bot)
