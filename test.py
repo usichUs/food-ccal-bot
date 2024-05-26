@@ -1,34 +1,50 @@
 import sqlite3
+from datetime import datetime
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.filters import Command
+from aiogram import Router
 from setting.settings import TOKEN
-from database import init_db
+from database import reset_db
 from populate_db import populate_db
 
 DATABASE = 'bot_database.db'
 
 bot = Bot(token=TOKEN)
-dp = Dispatcher(bot=bot)
+dp = Dispatcher()
+router = Router()
+
+user_states = {}
 
 def get_user_data(user_id):
     with sqlite3.connect(DATABASE) as connection:
         cursor = connection.cursor()
-        cursor.execute('SELECT weight, height, age, physical_activity_level FROM user WHERE id = ?', (user_id,))
+        cursor.execute('SELECT weight, height, age, gender, physical_activity_level FROM user WHERE id = ?', (user_id,))
         return cursor.fetchone()
 
-def update_user_data(user_id, weight, height, age, activity_level):
+def update_user_data(user_id, weight=None, height=None, age=None, gender=None, activity_level=None):
     with sqlite3.connect(DATABASE) as connection:
         cursor = connection.cursor()
-        cursor.execute('''
-            INSERT INTO user (id, weight, height, age, physical_activity_level)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-            weight = excluded.weight,
-            height = excluded.height,
-            age = excluded.age,
-            physical_activity_level = excluded.physical_activity_level
-        ''', (user_id, weight, height, age, activity_level))
+        cursor.execute('SELECT weight, height, age, gender, physical_activity_level FROM user WHERE id = ?', (user_id,))
+        user_data = cursor.fetchone()
+        
+        if user_data:
+            weight = weight if weight is not None else user_data[0]
+            height = height if height is not None else user_data[1]
+            age = age if age is not None else user_data[2]
+            gender = gender if gender is not None else user_data[3]
+            activity_level = activity_level if activity_level is not None else user_data[4]
+
+            cursor.execute('''
+                UPDATE user SET weight = ?, height = ?, age = ?, gender = ?, physical_activity_level = ?
+                WHERE id = ?
+            ''', (weight, height, age, gender, activity_level, user_id))
+        else:
+            cursor.execute('''
+                INSERT INTO user (id, weight, height, age, gender, physical_activity_level)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (user_id, weight, height, age, gender, activity_level))
+        
         connection.commit()
 
 def get_random_meal():
@@ -37,40 +53,53 @@ def get_random_meal():
         cursor.execute('SELECT name, description FROM meals ORDER BY RANDOM() LIMIT 1')
         return cursor.fetchone()
 
-def get_healthy_foods():
+def get_random_healthy_food():
     with sqlite3.connect(DATABASE) as connection:
         cursor = connection.cursor()
-        cursor.execute('SELECT name, description FROM healthy_foods')
-        return cursor.fetchall()
-
-def get_nutrition_tips():
-    with sqlite3.connect(DATABASE) as connection:
-        cursor = connection.cursor()
-        cursor.execute('SELECT tip FROM nutrition_tips')
-        return cursor.fetchall()
-
-def get_activity_tips():
-    with sqlite3.connect(DATABASE) as connection:
-        cursor = connection.cursor()
-        cursor.execute('SELECT tip FROM activity_tips')
-        return cursor.fetchall()
-
-def get_user_meal_plan(user_id):
-    with sqlite3.connect(DATABASE) as connection:
-        cursor = connection.cursor()
-        cursor.execute('''
-            SELECT mb.name, ml.name, md.name, ms.name 
-            FROM user_meal_plan ump
-            LEFT JOIN meal_breakfast mb ON ump.breakfast_id = mb.id
-            LEFT JOIN meal_lunch ml ON ump.lunch_id = ml.id
-            LEFT JOIN meal_dinner md ON ump.dinner_id = md.id
-            LEFT JOIN meal_snacks ms ON ump.snack_id = ms.id
-            WHERE ump.user_id = ?
-        ''', (user_id,))
+        cursor.execute('SELECT name, description FROM healthy_foods ORDER BY RANDOM() LIMIT 1')
         return cursor.fetchone()
 
+def get_random_nutrition_tip():
+    with sqlite3.connect(DATABASE) as connection:
+        cursor = connection.cursor()
+        cursor.execute('SELECT tip FROM nutrition_tips ORDER BY RANDOM() LIMIT 1')
+        return cursor.fetchone()
 
-@dp.message(Command('start'))
+def get_random_activity_tip():
+    with sqlite3.connect(DATABASE) as connection:
+        cursor = connection.cursor()
+        cursor.execute('SELECT tip FROM activity_tips ORDER BY RANDOM() LIMIT 1')
+        return cursor.fetchone()
+
+def get_random_meal_by_type(exclude_ids):
+    with sqlite3.connect(DATABASE) as connection:
+        cursor = connection.cursor()
+        query = '''
+            SELECT id, name, description, calories 
+            FROM meals 
+            WHERE id NOT IN ({})
+            ORDER BY RANDOM() LIMIT 1
+        '''.format(','.join('?' for _ in exclude_ids))
+        cursor.execute(query, exclude_ids)
+        return cursor.fetchone()
+
+def calculate_calories(weight, height, age, gender, activity_level):
+    if gender == 'Мужской':
+        bmr = 88.36 + (13.4 * weight) + (4.8 * height) - (5.7 * age)
+    else:
+        bmr = 447.6 + (9.2 * weight) + (3.1 * height) - (4.3 * age)
+
+    if activity_level == 'низкий':
+        return bmr * 1.2
+    elif activity_level == 'средний':
+        return bmr * 1.55
+    else:
+        return bmr * 1.725
+
+def calculate_bmi(weight, height):
+    return weight / (height / 100) ** 2
+
+@router.message(Command('start'))
 async def send_welcome(message: types.Message):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Получить рецепт", callback_data="get_recipe")],
@@ -78,77 +107,255 @@ async def send_welcome(message: types.Message):
         [InlineKeyboardButton(text="Рекомендации по питанию", callback_data="nutrition_tips")],
         [InlineKeyboardButton(text="Рекомендации по активности", callback_data="activity_tips")],
         [InlineKeyboardButton(text="План питания на день", callback_data="meal_plan")],
-        [InlineKeyboardButton(text="Мои данные", callback_data="my_data")]
+        [InlineKeyboardButton(text="Мои данные", callback_data="my_data")],
+        [InlineKeyboardButton(text="Заполнить данные", callback_data="fill_data")]
     ])
-    await message.answer("Привет! Я бот для расчета питания. Что вы хотите сделать?", reply_markup=keyboard)
+    await message.answer(
+        "Привет! Я бот для расчета питания. Вот что я могу сделать:\n\n"
+        "/start - Показать это сообщение\n"
+        "/get_recipe - Получить случайный рецепт\n"
+        "/healthy_foods - Полезные продукты\n"
+        "/nutrition_tips - Рекомендации по питанию\n"
+        "/activity_tips - Рекомендации по активности\n"
+        "/meal_plan - План питания на день\n"
+        "/my_data - Мои данные\n\n"
+        "Что вы хотите сделать?", 
+        reply_markup=keyboard
+    )
 
-@dp.callback_query(lambda c: c.data == 'my_data')
+@router.callback_query(lambda c: c.data == 'my_data')
 async def my_data(callback_query: types.CallbackQuery):
     user_id = callback_query.from_user.id
     user_data = get_user_data(user_id)
     if user_data:
-        weight, height, age, activity_level = user_data
-        response = f"Ваши данные:\n\nВес: {weight}\nРост: {height}\nВозраст: {age}\nУровень активности: {activity_level}"
+        weight, height, age, gender, activity_level = user_data
+        bmi = calculate_bmi(weight, height)
+        calories = calculate_calories(weight, height, age, gender, activity_level)
+        
+        # Get today's meal plan
+        today_date = datetime.now().date()
+        with sqlite3.connect(DATABASE) as connection:
+            cursor = connection.cursor()
+            cursor.execute('''
+                SELECT breakfast_id, lunch_id, dinner_id, snack_id 
+                FROM user_meal_plan 
+                WHERE user_id = ? AND date = ?
+            ''', (user_id, today_date))
+            meal_plan = cursor.fetchone()
+        
+        meal_plan_str = ""
+        total_calories = 0
+        
+        if meal_plan:
+            meal_ids = [meal_plan[0], meal_plan[1], meal_plan[2], meal_plan[3]]
+            for meal_id in meal_ids:
+                cursor.execute('SELECT name, description, calories FROM meals WHERE id = ?', (meal_id,))
+                meal = cursor.fetchone()
+                meal_plan_str += f"{meal[0]} - {meal[1]} ({meal[2]} ккал)\n"
+                total_calories += meal[2]
+        
+        response = (
+            f"<b>Ваши данные:</b>\n\n"
+            f"Вес: {weight} кг\n"
+            f"Рост: {height} см\n"
+            f"Возраст: {age} лет\n"
+            f"Пол: {gender}\n"
+            f"Уровень активности: {activity_level}\n"
+            f"ИМТ: {bmi:.2f}\n"
+            f"Рекомендуемая калорийность: {calories:.2f} ккал\n\n"
+            f"<b>Ваш план питания на день:</b>\n{meal_plan_str}\n"
+            f"Общая калорийность: {total_calories} ккал"
+        )
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Изменить параметры", callback_data="set_parameters")]
+            [InlineKeyboardButton(text="Изменить вес", callback_data="set_weight")],
+            [InlineKeyboardButton(text="Изменить рост", callback_data="set_height")],
+            [InlineKeyboardButton(text="Изменить возраст", callback_data="set_age")],
+            [InlineKeyboardButton(text="Изменить пол", callback_data="set_gender")],
+            [InlineKeyboardButton(text="Изменить активность", callback_data="set_activity")]
         ])
         
-        await callback_query.message.answer(response, reply_markup=keyboard)
+        await callback_query.message.answer(response, reply_markup=keyboard, parse_mode="HTML")
     else:
-        await callback_query.message.answer("Данные пользователя не найдены. Пожалуйста, задайте параметры сначала.")
+        await callback_query.message.answer("Данные пользователя не найдены. Пожалуйста, заполните параметры сначала.")
 
-@dp.callback_query(lambda c: c.data == 'set_parameters')
+@router.callback_query(lambda c: c.data == 'fill_data')
+async def fill_data(callback_query: types.CallbackQuery):
+    user_id = callback_query.from_user.id
+    user_states[user_id] = 'weight'
+    await callback_query.message.answer("Введите ваш вес (кг):")
+
+@router.callback_query(lambda c: c.data in ['set_weight', 'set_height', 'set_age', 'set_gender', 'set_activity'])
 async def set_parameters(callback_query: types.CallbackQuery):
-    await callback_query.message.answer("Введите ваши данные в формате: вес, рост, возраст, уровень активности (низкий, средний, высокий). Пример: 70 170 30 средний")
+    user_id = callback_query.from_user.id
+    state = callback_query.data.split('_')[1]
+    user_states[user_id] = state
+    
+    if state == 'weight':
+        await callback_query.message.answer("Введите ваш вес (кг):")
+    elif state == 'height':
+        await callback_query.message.answer("Введите ваш рост (см):")
+    elif state == 'age':
+        await callback_query.message.answer("Введите ваш возраст (лет):")
+    elif state == 'gender':
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Мужской", callback_data="gender_male")],
+            [InlineKeyboardButton(text="Женский", callback_data="gender_female")]
+        ])
+        await callback_query.message.answer("Выберите ваш пол:", reply_markup=keyboard)
+    elif state == 'activity':
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Низкий (малоподвижный образ жизни)", callback_data="activity_low")],
+            [InlineKeyboardButton(text="Средний (умеренная активность)", callback_data="activity_medium")],
+            [InlineKeyboardButton(text="Высокий (высокая активность)", callback_data="activity_high")]
+        ])
+        await callback_query.message.answer("Выберите уровень активности:", reply_markup=keyboard)
 
-@dp.message(lambda message: ' ' in message.text and len(message.text.split()) == 4)
-async def handle_parameters(message: types.Message):
+@router.message(lambda message: message.text.isdigit() and user_states.get(message.from_user.id) == 'weight')
+async def handle_weight(message: types.Message):
+    weight = float(message.text)
     user_id = message.from_user.id
-    try:
-        weight, height, age, activity_level = message.text.split()
-        update_user_data(user_id, weight=float(weight), height=float(height), age=int(age), activity_level=activity_level)
-        await message.answer("Ваши данные обновлены.")
-    except Exception as e:
-        await message.answer("Ошибка при вводе данных. Убедитесь, что вы ввели данные в правильном формате.")
+    update_user_data(user_id, weight=weight)
+    user_states[user_id] = 'height'
+    await message.answer("Введите ваш рост (см):")
 
-@dp.callback_query(lambda c: c.data == 'get_recipe')
+@router.message(lambda message: message.text.isdigit() and user_states.get(message.from_user.id) == 'height')
+async def handle_height(message: types.Message):
+    height = float(message.text)
+    user_id = message.from_user.id
+    update_user_data(user_id, height=height)
+    user_states[user_id] = 'age'
+    await message.answer("Введите ваш возраст (лет):")
+
+@router.message(lambda message: message.text.isdigit() and user_states.get(message.from_user.id) == 'age')
+async def handle_age(message: types.Message):
+    age = int(message.text)
+    user_id = message.from_user.id
+    update_user_data(user_id, age=age)
+    user_states[user_id] = 'gender'
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Мужской", callback_data="gender_male")],
+        [InlineKeyboardButton(text="Женский", callback_data="gender_female")]
+    ])
+    await message.answer("Выберите ваш пол:", reply_markup=keyboard)
+
+@router.callback_query(lambda c: user_states.get(c.from_user.id) == 'gender' and c.data in ['gender_male', 'gender_female'])
+async def handle_gender(callback_query: types.CallbackQuery):
+    gender = "Мужской" if callback_query.data == 'gender_male' else "Женский"
+    user_id = callback_query.from_user.id
+    update_user_data(user_id, gender=gender)
+    user_states[user_id] = 'activity_level'
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Низкий (малоподвижный образ жизни)", callback_data="activity_low")],
+        [InlineKeyboardButton(text="Средний (умеренная активность)", callback_data="activity_medium")],
+        [InlineKeyboardButton(text="Высокий (высокая активность)", callback_data="activity_high")]
+    ])
+    await callback_query.message.answer("Выберите уровень активности:", reply_markup=keyboard)
+
+@router.callback_query(lambda c: user_states.get(c.from_user.id) == 'activity_level' and c.data in ['activity_low', 'activity_medium', 'activity_high'])
+async def handle_activity_level(callback_query: types.CallbackQuery):
+    activity_level = {
+        'activity_low': 'низкий',
+        'activity_medium': 'средний',
+        'activity_high': 'высокий'
+    }[callback_query.data]
+    
+    user_id = callback_query.from_user.id
+    update_user_data(user_id, activity_level=activity_level)
+    del user_states[user_id]
+    await callback_query.message.answer("Уровень активности обновлен.")
+    await send_welcome(callback_query.message)
+
+@router.callback_query(lambda c: c.data == 'get_recipe')
 async def get_recipe(callback_query: types.CallbackQuery):
     meal = get_random_meal()
     if meal:
-        await callback_query.message.answer(f"Рецепт: {meal[0]}\nОписание: {meal[1]}")
+        await callback_query.message.answer(f"<b>Рецепт:</b> {meal[0]}\n<b>Описание:</b> {meal[1]}", parse_mode="HTML")
     else:
         await callback_query.message.answer("Не удалось найти рецепт.")
 
-@dp.callback_query(lambda c: c.data == 'healthy_foods')
+@router.callback_query(lambda c: c.data == 'healthy_foods')
 async def healthy_foods(callback_query: types.CallbackQuery):
-    foods = get_healthy_foods()
-    response = "\n\n".join([f"{food[0]}: {food[1]}" for food in foods])
-    await callback_query.message.answer(f"Полезные продукты:\n\n{response}")
+    food = get_random_healthy_food()
+    if food:
+        await callback_query.message.answer(f"<b>Полезный продукт:</b> {food[0]}\n<b>Описание:</b> {food[1]}", parse_mode="HTML")
+    else:
+        await callback_query.message.answer("Не удалось найти полезные продукты.")
 
-@dp.callback_query(lambda c: c.data == 'nutrition_tips')
+@router.callback_query(lambda c: c.data == 'nutrition_tips')
 async def nutrition_tips(callback_query: types.CallbackQuery):
-    tips = get_nutrition_tips()
-    response = "\n\n".join([tip[0] for tip in tips])
-    await callback_query.message.answer(f"Рекомендации по питанию:\n\n{response}")
+    tip = get_random_nutrition_tip()
+    if tip:
+        await callback_query.message.answer(f"<b>Рекомендация по питанию:</b> {tip[0]}", parse_mode="HTML")
+    else:
+        await callback_query.message.answer("Не удалось найти рекомендации по питанию.")
 
-@dp.callback_query(lambda c: c.data == 'activity_tips')
+@router.callback_query(lambda c: c.data == 'activity_tips')
 async def activity_tips(callback_query: types.CallbackQuery):
-    tips = get_activity_tips()
-    response = "\n\n".join([tip[0] for tip in tips])
-    await callback_query.message.answer(f"Рекомендации по активности:\n\n{response}")
+    tip = get_random_activity_tip()
+    if tip:
+        await callback_query.message.answer(f"<b>Рекомендация по активности:</b> {tip[0]}", parse_mode="HTML")
+    else:
+        await callback_query.message.answer("Не удалось найти рекомендации по активности.")
 
-@dp.callback_query(lambda c: c.data == 'meal_plan')
+@router.callback_query(lambda c: c.data == 'meal_plan')
 async def meal_plan(callback_query: types.CallbackQuery):
     user_id = callback_query.from_user.id
-    plan = get_user_meal_plan(user_id)
-    if plan:
-        response = f"Ваш план питания на день:\n\nЗавтрак: {plan[0]}\nОбед: {plan[1]}\nУжин: {plan[2]}\nПерекус: {plan[3]}"
-        await callback_query.message.answer(response)
-    else:
-        await callback_query.message.answer("Не удалось найти план питания. Пожалуйста, задайте параметры сначала.")
+    exclude_ids = []
+    meals = []
 
-if __name__ == "main":
-    init_db()
+    for meal_type in ['breakfast', 'lunch', 'dinner', 'snacks']:
+        meal = get_random_meal_by_type(exclude_ids)
+        if meal:
+            exclude_ids.append(meal[0])
+            meals.append(meal)
+
+    if len(meals) == 4:
+        today_date = datetime.now().date()
+        with sqlite3.connect(DATABASE) as connection:
+            cursor = connection.cursor()
+            cursor.execute('''
+                INSERT INTO user_meal_plan (user_id, date, breakfast_id, lunch_id, dinner_id, snack_id)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, date) DO UPDATE SET
+                breakfast_id = excluded.breakfast_id,
+                lunch_id = excluded.lunch_id,
+                dinner_id = excluded.dinner_id,
+                snack_id = excluded.snack_id
+            ''', (user_id, today_date, meals[0][0], meals[1][0], meals[2][0], meals[3][0]))
+            connection.commit()
+        
+        response = (
+            f"<b>Ваш план питания на день:</b>\n\n"
+            f"<b>Завтрак:</b> {meals[0][1]} - {meals[0][2]} ({meals[0][3]} ккал)\n"
+            f"<b>Обед:</b> {meals[1][1]} - {meals[1][2]} ({meals[1][3]} ккал)\n"
+            f"<b>Ужин:</b> {meals[2][1]} - {meals[2][2]} ({meals[2][3]} ккал)\n"
+            f"<b>Перекус:</b> {meals[3][1]} - {meals[3][2]} ({meals[3][3]} ккал)\n"
+        )
+        await callback_query.message.answer(response, parse_mode="HTML")
+    else:
+        await callback_query.message.answer("Не удалось найти план питания. Пожалуйста, попробуйте снова.")
+
+def register_handlers(router: Router):
+    router.message.register(send_welcome, Command('start'))
+    router.callback_query.register(my_data, lambda c: c.data == 'my_data')
+    router.callback_query.register(fill_data, lambda c: c.data == 'fill_data')
+    router.callback_query.register(set_parameters, lambda c: c.data in ['set_weight', 'set_height', 'set_age', 'set_gender', 'set_activity'])
+    router.message.register(handle_weight, lambda message: message.text.isdigit() and user_states.get(message.from_user.id) == 'weight')
+    router.message.register(handle_height, lambda message: message.text.isdigit() and user_states.get(message.from_user.id) == 'height')
+    router.message.register(handle_age, lambda message: message.text.isdigit() and user_states.get(message.from_user.id) == 'age')
+    router.callback_query.register(handle_gender, lambda c: c.data in ['gender_male', 'gender_female'] and user_states.get(c.from_user.id) == 'gender')
+    router.callback_query.register(handle_activity_level, lambda c: c.data in ['activity_low', 'activity_medium', 'activity_high'] and user_states.get(c.from_user.id) == 'activity_level')
+    router.callback_query.register(get_recipe, lambda c: c.data == 'get_recipe')
+    router.callback_query.register(healthy_foods, lambda c: c.data == 'healthy_foods')
+    router.callback_query.register(nutrition_tips, lambda c: c.data == 'nutrition_tips')
+    router.callback_query.register(activity_tips, lambda c: c.data == 'activity_tips')
+    router.callback_query.register(meal_plan, lambda c: c.data == 'meal_plan')
+
+if __name__ == "__main__":
+    reset_db()
     populate_db()
+    register_handlers(router)
+    dp.include_router(router)
     dp.run_polling(bot, skip_updates=True)

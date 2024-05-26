@@ -8,13 +8,18 @@ def populate_db():
 
         # Добавляем данные в таблицу meals
         meals_data = [
-            ('Овсянка', 'Овсянка с фруктами и орехами'),
-            ('Куриная грудка', 'Запеченная куриная грудка с овощами'),
-            ('Салат Цезарь', 'Салат с курицей, листьями салата, сыром и соусом Цезарь'),
-            ('Смузи', 'Смузи из банана, клубники и йогурта')
+            ('Овсянка', 'Овсянка с фруктами и орехами', 350),
+            ('Куриная грудка', 'Запеченная куриная грудка с овощами', 400),
+            ('Салат Цезарь', 'Салат с курицей, листьями салата, сыром и соусом Цезарь', 300),
+            ('Смузи', 'Смузи из банана, клубники и йогурта', 250),
+            ('Яичница', 'Яичница с помидорами и зеленью', 200),
+            ('Сэндвич с индейкой', 'Сэндвич с индейкой, сыром и овощами', 450),
+            ('Томатный суп', 'Томатный суп с базиликом', 150),
+            ('Греческий салат', 'Салат с огурцами, помидорами, оливками и сыром фета', 200),
+            ('Фрукты', 'Свежие фрукты', 100)
         ]
         cursor.executemany('''
-            INSERT INTO meals (name, description) VALUES (?, ?)
+            INSERT INTO meals (name, description, calories) VALUES (?, ?, ?)
         ''', meals_data)
 
         # Добавляем данные в таблицу ingredients
@@ -24,21 +29,31 @@ def populate_db():
             ('Листья салата', 'Свежие листья салата'),
             ('Банан', 'Свежий банан'),
             ('Клубника', 'Свежая клубника'),
-            ('Йогурт', 'Натуральный йогурт')
+            ('Йогурт', 'Натуральный йогурт'),
+            ('Помидоры', 'Свежие помидоры'),
+            ('Индейка', 'Мясо индейки'),
+            ('Огурцы', 'Свежие огурцы'),
+            ('Оливки', 'Маринованные оливки'),
+            ('Сыр фета', 'Греческий сыр фета')
         ]
         cursor.executemany('''
             INSERT INTO ingredients (name, description) VALUES (?, ?)
         ''', ingredients_data)
 
-        # Добавляем данные в таблицу meal_link
+        # Добавляем данные в таблицу meal_links
         meal_links_data = [
             (1, 'http://example.com/oatmeal'),
             (2, 'http://example.com/chicken'),
             (3, 'http://example.com/caesar_salad'),
-            (4, 'http://example.com/smoothie')
+            (4, 'http://example.com/smoothie'),
+            (5, 'http://example.com/omelette'),
+            (6, 'http://example.com/turkey_sandwich'),
+            (7, 'http://example.com/tomato_soup'),
+            (8, 'http://example.com/greek_salad'),
+            (9, 'http://example.com/fruits')
         ]
         cursor.executemany('''
-            INSERT INTO meal_link (meal_id, url) VALUES (?, ?)
+            INSERT INTO meal_links (meal_id, url) VALUES (?, ?)
         ''', meal_links_data)
 
         # Добавляем данные в таблицу healthy_foods
@@ -73,51 +88,6 @@ def populate_db():
         cursor.executemany('''
             INSERT INTO activity_tips (tip) VALUES (?)
         ''', [(tip,) for tip in activity_tips_data])
-
-        # Добавляем данные в таблицу meal_breakfast
-        meal_breakfast_data = [
-            (1,), (4,)
-        ]
-        cursor.executemany('''
-            INSERT INTO meal_breakfast (meal_id) VALUES (?)
-        ''', meal_breakfast_data)
-
-        # Добавляем данные в таблицу meal_lunch
-        meal_lunch_data = [
-            (2,), (3,)
-        ]
-        cursor.executemany('''
-            INSERT INTO meal_lunch (meal_id) VALUES (?)
-        ''', meal_lunch_data)
-
-        # Добавляем данные в таблицу meal_dinner
-        meal_dinner_data = [
-            (2,), (3,)
-        ]
-        cursor.executemany('''
-            INSERT INTO meal_dinner (meal_id) VALUES (?)
-        ''', meal_dinner_data)
-
-        # Добавляем данные в таблицу meal_snacks
-        meal_snacks_data = [
-            (4,)
-        ]
-        cursor.executemany('''
-            INSERT INTO meal_snacks (meal_id) VALUES (?)
-        ''', meal_snacks_data)
-
-        # Привязка ингредиентов к блюдам
-        meal_ingredients_data = [
-            (1, 1, '100 г'),
-            (2, 2, '200 г'),
-            (3, 3, '50 г'),
-            (4, 4, '1 шт.'),
-            (4, 5, '50 г'),
-            (4, 6, '100 мл')
-        ]
-        cursor.executemany('''
-            INSERT INTO meal_ingredients (meal_id, ingredient_id, quantity) VALUES (?, ?, ?)
-        ''', meal_ingredients_data)
 
         connection.commit()
 
