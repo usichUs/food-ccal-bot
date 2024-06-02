@@ -15,7 +15,7 @@ def init_db():
             gender TEXT,
             physical_activity_level TEXT
         );
-
+ 
         -- Создаем таблицу блюд
         CREATE TABLE IF NOT EXISTS meals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -23,14 +23,14 @@ def init_db():
             description TEXT,
             calories REAL
         );
-
+ 
         -- Создаем таблицу ингредиентов
         CREATE TABLE IF NOT EXISTS ingredients (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             description TEXT
         );
-
+ 
         -- Создаем таблицу ссылок на приготовление блюд
         CREATE TABLE IF NOT EXISTS meal_links (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -38,26 +38,26 @@ def init_db():
             url TEXT NOT NULL,
             FOREIGN KEY(meal_id) REFERENCES meals(id)
         );
-
+ 
         -- Создаем таблицу полезных продуктов и блюд
         CREATE TABLE IF NOT EXISTS healthy_foods (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             description TEXT NOT NULL
         );
-
+ 
         -- Создаем таблицу советов по питанию
         CREATE TABLE IF NOT EXISTS nutrition_tips (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             tip TEXT NOT NULL
         );
-
+ 
         -- Создаем таблицу советов по активности
         CREATE TABLE IF NOT EXISTS activity_tips (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             tip TEXT NOT NULL
         );
-
+ 
         -- Создаем таблицу планов питания пользователя
         CREATE TABLE IF NOT EXISTS user_meal_plan (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -74,7 +74,7 @@ def init_db():
             FOREIGN KEY(snack_id) REFERENCES meals(id),
             UNIQUE(user_id, date)
         );
-
+ 
         -- Создаем промежуточную таблицу для связи блюд и ингредиентов
         CREATE TABLE IF NOT EXISTS meal_ingredients (
             meal_id INTEGER NOT NULL,
@@ -83,6 +83,17 @@ def init_db():
             PRIMARY KEY (meal_id, ingredient_id),
             FOREIGN KEY(meal_id) REFERENCES meals(id),
             FOREIGN KEY(ingredient_id) REFERENCES ingredients(id)
+        );
+ 
+        -- Создаем таблицу для хранения оценок пользователей
+        CREATE TABLE IF NOT EXISTS meal_ratings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            meal_id INTEGER NOT NULL,
+            rating INTEGER NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES user(id),
+            FOREIGN KEY(meal_id) REFERENCES meals(id),
+            UNIQUE(user_id, meal_id)
         );
         ''')
         connection.commit()
@@ -100,6 +111,7 @@ def clear_db():
         DROP TABLE IF EXISTS activity_tips;
         DROP TABLE IF EXISTS user_meal_plan;
         DROP TABLE IF EXISTS meal_ingredients;
+        DROP TABLE IF EXISTS meal_ratings;
         ''')
         connection.commit()
 
