@@ -51,9 +51,12 @@ def get_random_meal():
     with sqlite3.connect(DATABASE) as connection:
         cursor = connection.cursor()
         cursor.execute('''
-            SELECT meals.name, meals.description, meals.calories, meal_links.url
+            SELECT meals.id, meals.name, meals.description, meals.calories, meal_links.url, 
+                   IFNULL(AVG(meal_ratings.rating), 0) as avg_rating, COUNT(meal_ratings.rating) as rating_count
             FROM meals
             LEFT JOIN meal_links ON meals.id = meal_links.meal_id
+            LEFT JOIN meal_ratings ON meals.id = meal_ratings.meal_id
+            GROUP BY meals.id
             ORDER BY RANDOM() LIMIT 1
         ''')
         return cursor.fetchone()
@@ -80,11 +83,14 @@ def get_random_meal_by_type(exclude_ids):
     with sqlite3.connect(DATABASE) as connection:
         cursor = connection.cursor()
         query = '''
-            SELECT meals.id, meals.name, meals.description, meals.calories, meal_links.url
+            SELECT meals.id, meals.name, meals.description, meals.calories, meal_links.url, 
+                   IFNULL(AVG(meal_ratings.rating), 0) as avg_rating
             FROM meals
             LEFT JOIN meal_links ON meals.id = meal_links.meal_id
+            LEFT JOIN meal_ratings ON meals.id = meal_ratings.meal_id
             WHERE meals.id NOT IN ({})
-            ORDER BY RANDOM() LIMIT 1
+            GROUP BY meals.id
+            ORDER BY avg_rating DESC, RANDOM() LIMIT 1
         '''.format(','.join('?' for _ in exclude_ids))
         cursor.execute(query, exclude_ids)
         return cursor.fetchone()
@@ -115,8 +121,6 @@ async def send_welcome(message: types.Message):
         [InlineKeyboardButton(text="План питания на день", callback_data="meal_plan")],
         [InlineKeyboardButton(text="Мои данные", callback_data="my_data")],
         [InlineKeyboardButton(text="Заполнить данные", callback_data="fill_data")],
-        [InlineKeyboardButton(text="Поиск блюд", callback_data="search_meals")],
-        [InlineKeyboardButton(text="Оценить блюдо", callback_data="rate_meal")]
     ])
     await message.answer(
         "Привет! Я бот для расчета питания. Вот что я могу сделать:\n\n"
@@ -159,9 +163,9 @@ async def my_data(callback_query: types.CallbackQuery):
         if meal_plan:
             meal_ids = [meal_plan[0], meal_plan[1], meal_plan[2], meal_plan[3]]
             for meal_id in meal_ids:
-                cursor.execute('SELECT name, description, calories FROM meals WHERE id = ?', (meal_id,))
+                cursor.execute('SELECT name, description, calories, meal_links.url FROM meals LEFT JOIN meal_links ON meals.id = meal_links.meal_id WHERE meals.id = ?', (meal_id,))
                 meal = cursor.fetchone()
-                meal_plan_str += f"{meal[0]} - {meal[1]} ({meal[2]} ккал)\n"
+                meal_plan_str += f"{meal[0]} - {meal[1]} ({meal[2]} ккал)\nСсылка: {meal[3]}\n"
                 total_calories += meal[2]
         
         response = (
@@ -188,7 +192,7 @@ async def my_data(callback_query: types.CallbackQuery):
         await callback_query.message.answer(response, reply_markup=keyboard, parse_mode="HTML")
     else:
         await callback_query.message.answer("Данные пользователя не найдены. Пожалуйста, заполните параметры сначала.")
- 
+
 @router.callback_query(lambda c: c.data == 'fill_data')
 async def fill_data(callback_query: types.CallbackQuery):
     user_id = callback_query.from_user.id
@@ -281,13 +285,26 @@ async def handle_activity_level(callback_query: types.CallbackQuery):
 async def get_recipe(callback_query: types.CallbackQuery):
     meal = get_random_meal()
     if meal:
-        await callback_query.message.answer(
-            f"<b>Рецепт:</b> {meal[0]}\n<b>Описание:</b> {meal[1]}\n<b>Калории:</b> {meal[2]} ккал\n<b>Ссылка:</b> {meal[3]}", 
-            parse_mode="HTML"
+        meal_id, name, description, calories, url, avg_rating, rating_count = meal
+        response = (
+            f"<b>Рецепт:</b> {name}\n"
+            f"<b>Описание:</b> {description}\n"
+            f"<b>Калории:</b> {calories} ккал\n"
+            f"<b>Ссылка:</b> {url}\n"
+            f"<b>Средний рейтинг:</b> {avg_rating:.1f} ({rating_count} оценок)\n"
+            "Оцените это блюдо:"
         )
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="1", callback_data=f"rate_{meal_id}_1")],
+            [InlineKeyboardButton(text="2", callback_data=f"rate_{meal_id}_2")],
+            [InlineKeyboardButton(text="3", callback_data=f"rate_{meal_id}_3")],
+            [InlineKeyboardButton(text="4", callback_data=f"rate_{meal_id}_4")],
+            [InlineKeyboardButton(text="5", callback_data=f"rate_{meal_id}_5")]
+        ])
+        await callback_query.message.answer(response, reply_markup=keyboard, parse_mode="HTML")
     else:
         await callback_query.message.answer("Не удалось найти рецепт.")
- 
+
 @router.callback_query(lambda c: c.data == 'healthy_foods')
 async def healthy_foods(callback_query: types.CallbackQuery):
     food = get_random_healthy_food()
@@ -317,13 +334,13 @@ async def meal_plan(callback_query: types.CallbackQuery):
     user_id = callback_query.from_user.id
     exclude_ids = []
     meals = []
- 
+
     for meal_type in ['breakfast', 'lunch', 'dinner', 'snacks']:
         meal = get_random_meal_by_type(exclude_ids)
         if meal:
             exclude_ids.append(meal[0])
             meals.append(meal)
- 
+
     if len(meals) == 4:
         today_date = datetime.now().date()
         with sqlite3.connect(DATABASE) as connection:
@@ -341,36 +358,15 @@ async def meal_plan(callback_query: types.CallbackQuery):
         
         response = (
             f"<b>Ваш план питания на день:</b>\n\n"
-            f"<b>Завтрак:</b> {meals[0][1]} - {meals[0][2]} ({meals[0][3]} ккал)\n<b>Ссылка:</b> {meals[0][4]}\n\n"
-            f"<b>Обед:</b> {meals[1][1]} - {meals[1][2]} ({meals[1][3]} ккал)\n<b>Ссылка:</b> {meals[1][4]}\n\n"
-            f"<b>Ужин:</b> {meals[2][1]} - {meals[2][2]} ({meals[2][3]} ккал)\n<b>Ссылка:</b> {meals[2][4]}\n\n"
-            f"<b>Перекус:</b> {meals[3][1]} - {meals[3][2]} ({meals[3][3]} ккал)\n<b>Ссылка:</b> {meals[3][4]}\n"
+            f"<b>Завтрак:</b> {meals[0][1]} - {meals[0][2]} ({meals[0][3]} ккал)\n<b>Ссылка:</b> {meals[0][4]}\n<b>Средняя оценка:</b> {meals[0][5]:.2f}\n\n"
+            f"<b>Обед:</b> {meals[1][1]} - {meals[1][2]} ({meals[1][3]} ккал)\n<b>Ссылка:</b> {meals[1][4]}\n<b>Средняя оценка:</b> {meals[1][5]:.2f}\n\n"
+            f"<b>Ужин:</b> {meals[2][1]} - {meals[2][2]} ({meals[2][3]} ккал)\n<b>Ссылка:</b> {meals[2][4]}\n<b>Средняя оценка:</b> {meals[2][5]:.2f}\n\n"
+            f"<b>Перекус:</b> {meals[3][1]} - {meals[3][2]} ({meals[3][3]} ккал)\n<b>Ссылка:</b> {meals[3][4]}\n<b>Средняя оценка:</b> {meals[3][5]:.2f}\n"
         )
         await callback_query.message.answer(response, parse_mode="HTML")
     else:
         await callback_query.message.answer("Не удалось найти план питания. Пожалуйста, попробуйте снова.")
- 
-def search_meals_by_keyword(keyword):
-    with sqlite3.connect(DATABASE) as connection:
-        cursor = connection.cursor()
-        query = "SELECT name, description, calories FROM meals WHERE name LIKE ? OR description LIKE ?"
-        cursor.execute(query, (f'%{keyword}%', f'%{keyword}%'))
-        return cursor.fetchall()
- 
-@router.message(Command('search_meals'))
-async def search_meals(message: types.Message):
-    await message.answer("Введите ключевое слово для поиска блюд:")
- 
-@router.message(lambda message: message.text.startswith('/search '))
-async def handle_search_meals(message: types.Message):
-    keyword = message.text[len('/search '):].strip()
-    meals = search_meals_by_keyword(keyword)
-    if meals:
-        response = "\n\n".join([f"<b>{meal[0]}</b>\n{meal[1]}\nКалории: {meal[2]} ккал" for meal in meals])
-        await message.answer(response, parse_mode="HTML")
-    else:
-        await message.answer("Не найдено ни одного блюда по вашему запросу.")
- 
+
 def add_meal_rating(user_id, meal_id, rating):
     with sqlite3.connect(DATABASE) as connection:
         cursor = connection.cursor()
@@ -385,7 +381,16 @@ def add_meal_rating(user_id, meal_id, rating):
 @router.message(Command('rate_meal'))
 async def rate_meal(message: types.Message):
     await message.answer("Введите ID блюда и вашу оценку (1-5) в формате: /rate_meal <ID> <оценка>")
- 
+
+@router.callback_query(lambda c: c.data.startswith('rate_'))
+async def handle_rate(callback_query: types.CallbackQuery):
+    data = callback_query.data.split('_')
+    meal_id = int(data[1])
+    rating = int(data[2])
+    user_id = callback_query.from_user.id
+    add_meal_rating(user_id, meal_id, rating)
+    await callback_query.message.answer("Ваша оценка успешно сохранена!")
+
 @router.message(lambda message: message.text.startswith('/rate_meal '))
 async def handle_rate_meal(message: types.Message):
     try:
@@ -400,7 +405,29 @@ async def handle_rate_meal(message: types.Message):
             await message.answer("Оценка должна быть числом от 1 до 5.")
     except ValueError:
         await message.answer("Неверный формат. Пожалуйста, используйте формат: /rate_meal <ID> <оценка>")
- 
+
+@router.message(Command('search_meals'))
+async def search_meals(message: types.Message):
+    await message.answer("Введите ключевое слово для поиска блюд:")
+
+@router.message(lambda message: not message.text.startswith('/search_meals') and user_states.get(message.from_user.id) == 'search')
+async def handle_search_meals(message: types.Message):
+    keyword = message.text.strip()
+    meals = search_meals_by_keyword(keyword)
+    if meals:
+        response = "\n\n".join([f"<b>{meal[0]}</b>\n{meal[1]}\nКалории: {meal[2]} ккал" for meal in meals])
+        await message.answer(response, parse_mode="HTML")
+    else:
+        await message.answer("Не найдено ни одного блюда по вашему запросу.")
+    del user_states[message.from_user.id]
+
+def search_meals_by_keyword(keyword):
+    with sqlite3.connect(DATABASE) as connection:
+        cursor = connection.cursor()
+        query = "SELECT name, description, calories FROM meals WHERE name LIKE ? OR description LIKE ?"
+        cursor.execute(query, (f'%{keyword}%', f'%{keyword}%'))
+        return cursor.fetchall()
+
 def register_handlers(router: Router):
     router.message.register(send_welcome, Command('start'))
     router.callback_query.register(my_data, lambda c: c.data == 'my_data')
@@ -417,10 +444,10 @@ def register_handlers(router: Router):
     router.callback_query.register(activity_tips, lambda c: c.data == 'activity_tips')
     router.callback_query.register(meal_plan, lambda c: c.data == 'meal_plan')
     router.message.register(search_meals, Command('search_meals'))
-    router.message.register(handle_search_meals, lambda message: message.text.startswith('/search '))
+    router.message.register(handle_search_meals, lambda message: user_states.get(message.from_user.id) == 'search')
     router.message.register(rate_meal, Command('rate_meal'))
     router.message.register(handle_rate_meal, lambda message: message.text.startswith('/rate_meal '))
- 
+
 if __name__ == "__main__":
     reset_db()
     populate_db()

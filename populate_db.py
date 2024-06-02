@@ -43,9 +43,9 @@ def populate_db():
         # Добавляем данные в таблицу meal_links
         meal_links_data = [
             (1, 'https://calorizator.ru/recipe/52506'),
-            (2, 'https://1000.menu/cooking/27801-kurinaya-grudka-s-ovoshchami-v-duxovke '),
+            (2, 'https://1000.menu/cooking/27801-kurinaya-grudka-s-ovoshchami-v-duxovke'),
             (3, 'https://eda.ru/recepty/salaty/salat-cezar-tradicionnij-25585'),
-            (4, 'https://1000.menu/cooking/23700-smuzi-klubnika-banan '),
+            (4, 'https://1000.menu/cooking/23700-smuzi-klubnika-banan'),
             (5, 'https://eda.ru/recepty/zavtraki/yaichnica-s-pomidorami-i-zelenyu-136673'),
             (6, 'https://www.indilight.ru/recipes/sendvich-s-indeykoy-syrom-i-rukkoloy/'),
             (7, 'https://eda.ru/recepty/supy/tomatnij-sup-s-bazilikom-i-grenkami-38665'),
